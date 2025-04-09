@@ -42,14 +42,19 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	clientData := clientBuf[:n]
 
 	// 如果开启 JA3 检查，则提取并判断 JA3 指纹
-	if config.EnableJA3Check {
+	EnableJA3Check := config.EnableJA3Check()
+	EnableJA3Collection := config.EnableJA3Collection()
+	if EnableJA3Check || EnableJA3Collection {
 		if ja3.IsTLSClientHello(clientData) {
 			ja3Str, err := ja3.ExtractJA3(clientData)
 			if err != nil {
 				log.Printf("[WARN] 提取 JA3 失败: %v", err)
 			} else {
 				log.Printf("[INFO] 客户端 JA3: %s", ja3Str)
-				if config.IsBlacklisted(ja3Str) {
+				if EnableJA3Collection {
+					config.ReportJA3(ja3Str)
+				}
+				if EnableJA3Check && config.ShouldBlockJA3(ja3Str) {
 					log.Printf("[BLOCK] 客户端 JA3 黑名单匹配，断开连接: %s", ja3Str)
 					return
 				}
@@ -77,7 +82,7 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	}
 
 	// 若开启 JA3S 检查，则预读目标服务器数据进行检测
-	if config.EnableJA3SCheck {
+	if config.EnableJA3SCheck() {
 		targetReader := bufio.NewReader(targetConn)
 		targetConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		peekData, err := targetReader.Peek(8192)
@@ -91,7 +96,7 @@ func handle(clientConn net.Conn, forwardAddr string) {
 					log.Printf("[WARN] 提取 JA3S 失败: %v", err)
 				} else {
 					log.Printf("[INFO] 目标服务器 JA3S: %s", ja3sStr)
-					if config.IsServerBlacklisted(ja3sStr) {
+					if config.ShouldBlockJA3S(ja3sStr) {
 						log.Printf("[BLOCK] 目标服务器 JA3S 黑名单匹配，断开连接: %s", ja3sStr)
 						return
 					}
