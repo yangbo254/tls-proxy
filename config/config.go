@@ -17,12 +17,12 @@ var (
 	redisAvailable bool
 
 	// JA3 配置
-	enableJA3Check       = false
-	enableJA3Blacklist   = false
-	enableJA3Whitelist   = false
-	enableJA3Collection  = false
-	ja3Blacklist         = make(map[string]bool)
-	ja3Whitelist         = make(map[string]bool)
+	enableJA3Check      = false
+	enableJA3Blacklist  = false
+	enableJA3Whitelist  = false
+	enableJA3Collection = false
+	ja3Blacklist        = make(map[string]bool)
+	ja3Whitelist        = make(map[string]bool)
 
 	// JA3S 配置
 	enableJA3SCheck      = false
@@ -41,19 +41,20 @@ var (
 	ja3nWhitelist        = make(map[string]bool)
 
 	// JA4 配置
-	enableJA4Check       = false
-	enableJA4Blacklist   = false
-	enableJA4Whitelist   = false
-	enableJA4Collection  = false
-	ja4Blacklist         = make(map[string]bool)
-	ja4Whitelist         = make(map[string]bool)
+	enableJA4Check      = false
+	enableJA4Blacklist  = false
+	enableJA4Whitelist  = false
+	enableJA4Collection = false
+	ja4Blacklist        = make(map[string]bool)
+	ja4Whitelist        = make(map[string]bool)
 )
 
-func Init(redisAddr string) {
+func Init(redisAddr, redisPasswd string) {
 	rdb = redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-		DialTimeout: 3 * time.Second,
-		ReadTimeout: 2 * time.Second,
+		Addr:         redisAddr,
+		Password:     redisPasswd,
+		DialTimeout:  3 * time.Second,
+		ReadTimeout:  2 * time.Second,
 		WriteTimeout: 2 * time.Second,
 	})
 
@@ -150,6 +151,16 @@ func loadSet(key string) (map[string]bool, error) {
 	}
 	return m, nil
 }
+
+// 判断是否启用
+func EnableJA3Check() bool       { mu.RLock(); defer mu.RUnlock(); return enableJA3Check }
+func EnableJA3SCheck() bool      { mu.RLock(); defer mu.RUnlock(); return enableJA3SCheck }
+func EnableJA3NCheck() bool      { mu.RLock(); defer mu.RUnlock(); return enableJA3NCheck }
+func EnableJA4Check() bool       { mu.RLock(); defer mu.RUnlock(); return enableJA4Check }
+func EnableJA3Collection() bool  { mu.RLock(); defer mu.RUnlock(); return enableJA3Collection }
+func EnableJA3SCollection() bool { mu.RLock(); defer mu.RUnlock(); return enableJA3SCollection }
+func EnableJA3NCollection() bool { mu.RLock(); defer mu.RUnlock(); return enableJA3NCollection }
+func EnableJA4Collection() bool  { mu.RLock(); defer mu.RUnlock(); return enableJA4Collection }
 
 func ShouldBlockJA3(ja3 string) bool {
 	mu.RLock()

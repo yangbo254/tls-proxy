@@ -48,11 +48,11 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	EnableJA3NCollection := config.EnableJA3NCollection()
 	if EnableJA3Check || EnableJA3Collection || EnableJA3NCheck || EnableJA3NCollection {
 		if ja3.IsTLSClientHello(clientData) {
-			ja3Str,ja3nStr, err := ja3.ExtractJA3N(clientData)
+			ja3Str, ja3nStr, err := ja3.ExtractJA3N(clientData)
 			if err != nil {
 				log.Printf("[WARN] 提取 JA3+ 失败: %v", err)
 			} else {
-				log.Printf("[INFO] 客户端 JA3: %s, JA3n", ja3Str, ja3nStr)
+				log.Printf("[INFO] 客户端 JA3: %s, JA3n: %s", ja3Str, ja3nStr)
 				if EnableJA3Collection {
 					config.ReportJA3(ja3Str)
 				}

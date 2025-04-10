@@ -16,8 +16,8 @@ func main() {
 	targetAddr := flag.String("target", "127.0.0.1:8443", "转发目标地址")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, 
-`使用方法: ./tls-proxy [参数]
+		fmt.Fprintf(os.Stderr,
+			`使用方法: ./tls-proxy [参数]
 可用参数:
 `)
 		flag.PrintDefaults()
