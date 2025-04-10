@@ -2,8 +2,6 @@ module tls-proxy
 
 go 1.21
 
-toolchain go1.24.2
-
 require (
 	github.com/dreadl0ck/tlsx v1.0.2
 	github.com/redis/go-redis/v9 v9.3.0
