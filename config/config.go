@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -10,10 +11,10 @@ import (
 )
 
 var (
-	rdb = redis.NewClient(&redis.Options{})
-	ctx = context.Background()
-	mu  sync.RWMutex
-
+	rdb            = redis.NewClient(&redis.Options{})
+	ctx            = context.Background()
+	mu             sync.RWMutex
+	cleanupOnce    sync.Once
 	redisAvailable bool
 
 	// JA3 配置
@@ -23,14 +24,6 @@ var (
 	enableJA3Collection = false
 	ja3Blacklist        = make(map[string]bool)
 	ja3Whitelist        = make(map[string]bool)
-
-	// JA3S 配置
-	enableJA3SCheck      = false
-	enableJA3SBlacklist  = false
-	enableJA3SWhitelist  = false
-	enableJA3SCollection = false
-	ja3sBlacklist        = make(map[string]bool)
-	ja3sWhitelist        = make(map[string]bool)
 
 	// JA3N 配置
 	enableJA3NCheck      = false
@@ -78,6 +71,12 @@ func refreshConfigLoop() {
 			if err != nil || err2 != nil {
 				log.Printf("[WARN] Redis 刷新配置失败，保持当前状态")
 				redisAvailable = false
+			} else {
+				// 启动清理任务（只启动一次）
+				cleanupOnce.Do(func() {
+					log.Printf("[INFO] 启动定时清理任务")
+					scheduleCleanup()
+				})
 			}
 		} else {
 			if _, err := rdb.Ping(ctx).Result(); err == nil {
@@ -99,11 +98,6 @@ func refreshFlags() error {
 	enableJA3Blacklist, _ = getBool("config:ja3_blacklist_enabled", enableJA3Blacklist)
 	enableJA3Whitelist, _ = getBool("config:ja3_whitelist_enabled", enableJA3Whitelist)
 	enableJA3Collection, _ = getBool("config:ja3_collection_enabled", enableJA3Collection)
-
-	enableJA3SCheck, _ = getBool("config:ja3s_check_enabled", enableJA3SCheck)
-	enableJA3SBlacklist, _ = getBool("config:ja3s_blacklist_enabled", enableJA3SBlacklist)
-	enableJA3SWhitelist, _ = getBool("config:ja3s_whitelist_enabled", enableJA3SWhitelist)
-	enableJA3SCollection, _ = getBool("config:ja3s_collection_enabled", enableJA3SCollection)
 
 	enableJA3NCheck, _ = getBool("config:ja3n_check_enabled", enableJA3NCheck)
 	enableJA3NBlacklist, _ = getBool("config:ja3n_blacklist_enabled", enableJA3NBlacklist)
@@ -138,8 +132,6 @@ func refreshLists() error {
 	var err error
 	ja3Blacklist, _ = loadSet("ja3:blacklist")
 	ja3Whitelist, _ = loadSet("ja3:whitelist")
-	ja3sBlacklist, _ = loadSet("ja3s:blacklist")
-	ja3sWhitelist, _ = loadSet("ja3s:whitelist")
 	ja3nBlacklist, _ = loadSet("ja3n:blacklist")
 	ja3nWhitelist, _ = loadSet("ja3n:whitelist")
 	ja4Blacklist, _ = loadSet("ja4:blacklist")
@@ -161,11 +153,9 @@ func loadSet(key string) (map[string]bool, error) {
 
 // 判断是否启用
 func EnableJA3Check() bool       { mu.RLock(); defer mu.RUnlock(); return enableJA3Check }
-func EnableJA3SCheck() bool      { mu.RLock(); defer mu.RUnlock(); return enableJA3SCheck }
 func EnableJA3NCheck() bool      { mu.RLock(); defer mu.RUnlock(); return enableJA3NCheck }
 func EnableJA4Check() bool       { mu.RLock(); defer mu.RUnlock(); return enableJA4Check }
 func EnableJA3Collection() bool  { mu.RLock(); defer mu.RUnlock(); return enableJA3Collection }
-func EnableJA3SCollection() bool { mu.RLock(); defer mu.RUnlock(); return enableJA3SCollection }
 func EnableJA3NCollection() bool { mu.RLock(); defer mu.RUnlock(); return enableJA3NCollection }
 func EnableJA4Collection() bool  { mu.RLock(); defer mu.RUnlock(); return enableJA4Collection }
 
@@ -175,25 +165,10 @@ func ShouldBlockJA3(ja3 string) bool {
 	if !enableJA3Check {
 		return false
 	}
-	if enableJA3Whitelist && ja3Whitelist[ja3] {
-		return false
-	}
-	if enableJA3Blacklist && ja3Blacklist[ja3] {
+	if enableJA3Whitelist && !ja3Whitelist[ja3] {
 		return true
 	}
-	return false
-}
-
-func ShouldBlockJA3S(ja3s string) bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	if !enableJA3SCheck {
-		return false
-	}
-	if enableJA3SWhitelist && ja3sWhitelist[ja3s] {
-		return false
-	}
-	if enableJA3SBlacklist && ja3sBlacklist[ja3s] {
+	if enableJA3Blacklist && ja3Blacklist[ja3] {
 		return true
 	}
 	return false
@@ -205,8 +180,8 @@ func ShouldBlockJA3N(ja3n string) bool {
 	if !enableJA3NCheck {
 		return false
 	}
-	if enableJA3NWhitelist && ja3nWhitelist[ja3n] {
-		return false
+	if enableJA3NWhitelist && !ja3nWhitelist[ja3n] {
+		return true
 	}
 	if enableJA3NBlacklist && ja3nBlacklist[ja3n] {
 		return true
@@ -220,8 +195,8 @@ func ShouldBlockJA4(ja4 string) bool {
 	if !enableJA4Check {
 		return false
 	}
-	if enableJA4Whitelist && ja4Whitelist[ja4] {
-		return false
+	if enableJA4Whitelist && !ja4Whitelist[ja4] {
+		return true
 	}
 	if enableJA4Blacklist && ja4Blacklist[ja4] {
 		return true
@@ -230,37 +205,83 @@ func ShouldBlockJA4(ja4 string) bool {
 }
 
 func ReportJA3(ja3 string) {
-	if !redisAvailable {
+	if !redisAvailable || !enableJA3Collection {
 		return
 	}
-	if enableJA3Collection {
-		_ = rdb.SAdd(ctx, "ja3:collected", ja3).Err()
-	}
-}
+	now := float64(time.Now().Unix())
 
-func ReportJA3S(ja3s string) {
-	if !redisAvailable {
-		return
-	}
-	if enableJA3SCollection {
-		_ = rdb.SAdd(ctx, "ja3s:collected", ja3s).Err()
+	pipe := rdb.TxPipeline()
+	pipe.ZIncrBy(ctx, "ja3:count", 1, ja3)
+	pipe.ZAdd(ctx, "ja3:last_seen", redis.Z{Score: now, Member: ja3})
+	pipe.SAdd(ctx, "ja3:collected", ja3)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		log.Printf("[WARN] Redis 上报 JA3 失败: %v", err)
 	}
 }
 
 func ReportJA3N(ja3n string) {
-	if !redisAvailable {
+	if !redisAvailable || !enableJA3NCollection {
 		return
 	}
-	if enableJA3NCollection {
-		_ = rdb.SAdd(ctx, "ja3n:collected", ja3n).Err()
+	now := float64(time.Now().Unix())
+
+	pipe := rdb.TxPipeline()
+	pipe.ZIncrBy(ctx, "ja3n:count", 1, ja3n)
+	pipe.ZAdd(ctx, "ja3n:last_seen", redis.Z{Score: now, Member: ja3n})
+	pipe.SAdd(ctx, "ja3n:collected", ja3n)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		log.Printf("[WARN] Redis 上报 JA3N 失败: %v", err)
 	}
 }
 
 func ReportJA4(ja4 string) {
-	if !redisAvailable {
+	if !redisAvailable || !enableJA4Collection {
 		return
 	}
-	if enableJA4Collection {
-		_ = rdb.SAdd(ctx, "ja4:collected", ja4).Err()
+	now := float64(time.Now().Unix())
+
+	pipe := rdb.TxPipeline()
+	pipe.ZIncrBy(ctx, "ja4:count", 1, ja4)
+	pipe.ZAdd(ctx, "ja4:last_seen", redis.Z{Score: now, Member: ja4})
+	pipe.SAdd(ctx, "ja4:collected", ja4)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		log.Printf("[WARN] Redis 上报 JA4 失败: %v", err)
 	}
+}
+
+func CleanupOldFingerprintEntries(expireSeconds int64) {
+	if !redisAvailable {
+		log.Printf("[INFO] Redis 不可用，跳过指纹清理")
+		return
+	}
+
+	expireBefore := float64(time.Now().Unix() - expireSeconds)
+	expireScore := fmt.Sprintf("%f", expireBefore)
+
+	targets := []string{
+		"ja3:last_seen",
+		"ja3n:last_seen",
+		"ja4:last_seen",
+	}
+
+	for _, key := range targets {
+		if deleted, err := rdb.ZRemRangeByScore(ctx, key, "-inf", expireScore).Result(); err != nil {
+			log.Printf("[WARN] 清理指纹 %s 失败: %v", key, err)
+		} else {
+			log.Printf("[INFO] 清理指纹 %s 过期项 %d 个", key, deleted)
+		}
+	}
+}
+
+func scheduleCleanup() {
+	ticker := time.NewTicker(6 * time.Hour)
+	go func() {
+		for range ticker.C {
+			CleanupOldFingerprintEntries(8 * 3600) // 清理 8h 前的指纹数据
+			log.Printf("[INFO] 清理过期指纹数据完成")
+		}
+	}()
 }

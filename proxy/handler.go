@@ -2,17 +2,18 @@
 package proxy
 
 import (
-	"bufio"
 	"io"
 	"log"
 	"net"
 	"time"
 	"tls-proxy/config"
-	"tls-proxy/ja3"
+	"tls-proxy/fingerprint"
+	"tls-proxy/util"
 )
 
 // StartProxy 监听 listenAddr，转发到 forwardAddr，并进行 JA3/JA3S 指纹检查（根据开关控制）
 func StartProxy(listenAddr, forwardAddr string) error {
+	fingerprint.VerboseLogs = true
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return err
@@ -47,8 +48,8 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	EnableJA3NCheck := config.EnableJA3NCheck()
 	EnableJA3NCollection := config.EnableJA3NCollection()
 	if EnableJA3Check || EnableJA3Collection || EnableJA3NCheck || EnableJA3NCollection {
-		if ja3.IsTLSClientHello(clientData) {
-			ja3Str, ja3nStr, err := ja3.ExtractJA3N(clientData)
+		if util.IsTLSClientHello(clientData) {
+			ja3Str, ja3nStr, err := fingerprint.JA3Fingerprint(&clientData)
 			if err != nil {
 				log.Printf("[WARN] 提取 JA3+ 失败: %v", err)
 			} else {
@@ -75,6 +76,31 @@ func handle(clientConn net.Conn, forwardAddr string) {
 		log.Printf("[INFO] 客户端 JA3+ 检查已关闭，跳过")
 	}
 
+	// 如果开启 JA4 检查，则提取并判断 JA4 指纹
+	EnableJA4Check := config.EnableJA4Check()
+	EnableJA4Collection := config.EnableJA4Collection()
+	if EnableJA4Check || EnableJA4Collection {
+		if util.IsTLSClientHello(clientData) {
+			ja4Str, err := fingerprint.JA4Fingerprint(&clientData)
+			if err != nil {
+				log.Printf("[WARN] 提取 JA4 失败: %v", err)
+			} else {
+				log.Printf("[INFO] 客户端 JA4: %s", ja4Str)
+				if EnableJA4Collection {
+					config.ReportJA4(ja4Str)
+				}
+				if EnableJA4Check && config.ShouldBlockJA4(ja4Str) {
+					log.Printf("[BLOCK] 客户端 JA4 阻断匹配，断开连接: %s", ja4Str)
+					return
+				}
+			}
+		} else {
+			log.Printf("[DEBUG] 客户端数据非 TLS ClientHello，不执行 JA4 检查")
+		}
+	} else {
+		log.Printf("[INFO] 客户端 JA3+ 检查已关闭，跳过")
+	}
+
 	// 与目标服务器建立连接
 	targetConn, err := net.Dial("tcp", forwardAddr)
 	if err != nil {
@@ -88,34 +114,6 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	if err != nil {
 		log.Printf("[ERROR] 向目标服务器转发数据失败: %v", err)
 		return
-	}
-
-	// 若开启 JA3S 检查，则预读目标服务器数据进行检测
-	if config.EnableJA3SCheck() {
-		targetReader := bufio.NewReader(targetConn)
-		targetConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		peekData, err := targetReader.Peek(8192)
-		if err != nil {
-			log.Printf("[WARN] 预读取目标服务器握手数据失败: %v", err)
-			// 如果无法预读，不执行 JA3S 检查，可以根据需求选择直接断开或继续转发
-		} else {
-			if ja3.IsTLSServerHello(peekData) {
-				ja3sStr, err := ja3.ExtractJA3S(peekData)
-				if err != nil {
-					log.Printf("[WARN] 提取 JA3S 失败: %v", err)
-				} else {
-					log.Printf("[INFO] 目标服务器 JA3S: %s", ja3sStr)
-					if config.ShouldBlockJA3S(ja3sStr) {
-						log.Printf("[BLOCK] 目标服务器 JA3S 黑名单匹配，断开连接: %s", ja3sStr)
-						return
-					}
-				}
-			} else {
-				log.Printf("[DEBUG] 目标服务器数据非 TLS ServerHello，不执行 JA3S 检查")
-			}
-		}
-	} else {
-		log.Printf("[INFO] 目标服务器 JA3S 检查已关闭，跳过")
 	}
 
 	// 清除所有超时设置
