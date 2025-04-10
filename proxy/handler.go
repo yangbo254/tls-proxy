@@ -41,21 +41,30 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	}
 	clientData := clientBuf[:n]
 
-	// 如果开启 JA3 检查，则提取并判断 JA3 指纹
+	// 如果开启 JA3+ 检查，则提取并判断 JA3+ 指纹
 	EnableJA3Check := config.EnableJA3Check()
 	EnableJA3Collection := config.EnableJA3Collection()
-	if EnableJA3Check || EnableJA3Collection {
+	EnableJA3NCheck := config.EnableJA3NCheck()
+	EnableJA3NCollection := config.EnableJA3NCollection()
+	if EnableJA3Check || EnableJA3Collection || EnableJA3NCheck || EnableJA3NCollection {
 		if ja3.IsTLSClientHello(clientData) {
-			ja3Str, err := ja3.ExtractJA3(clientData)
+			ja3Str,ja3nStr, err := ja3.ExtractJA3N(clientData)
 			if err != nil {
-				log.Printf("[WARN] 提取 JA3 失败: %v", err)
+				log.Printf("[WARN] 提取 JA3+ 失败: %v", err)
 			} else {
-				log.Printf("[INFO] 客户端 JA3: %s", ja3Str)
+				log.Printf("[INFO] 客户端 JA3: %s, JA3n", ja3Str, ja3nStr)
 				if EnableJA3Collection {
 					config.ReportJA3(ja3Str)
 				}
 				if EnableJA3Check && config.ShouldBlockJA3(ja3Str) {
-					log.Printf("[BLOCK] 客户端 JA3 黑名单匹配，断开连接: %s", ja3Str)
+					log.Printf("[BLOCK] 客户端 JA3 阻断匹配，断开连接: %s", ja3Str)
+					return
+				}
+				if EnableJA3NCollection {
+					config.ReportJA3N(ja3nStr)
+				}
+				if EnableJA3NCheck && config.ShouldBlockJA3N(ja3nStr) {
+					log.Printf("[BLOCK] 客户端 JA3N 阻断匹配，断开连接: %s", ja3nStr)
 					return
 				}
 			}
@@ -63,7 +72,7 @@ func handle(clientConn net.Conn, forwardAddr string) {
 			log.Printf("[DEBUG] 客户端数据非 TLS ClientHello，不执行 JA3 检查")
 		}
 	} else {
-		log.Printf("[INFO] 客户端 JA3 检查已关闭，跳过")
+		log.Printf("[INFO] 客户端 JA3+ 检查已关闭，跳过")
 	}
 
 	// 与目标服务器建立连接

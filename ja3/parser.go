@@ -259,16 +259,18 @@ func ExtractJA3S(data []byte) (string, error) {
 }
 
 // ExtractJA3N 计算 JA3N 指纹，与 JA3 的区别在于对 Extensions 部分进行排序，以确保指纹的一致性
-func ExtractJA3N(data []byte) (string, error) {
+func ExtractJA3N(data []byte) (string,string, error) {
 	// 首先提取原始的 JA3 字符串
 	ja3Str, err := ExtractJA3(data)
 	if err != nil {
-		return "", err
+		return "","", err
 	}
+	ja3Sum := md5.Sum([]byte(ja3Str))
+	ja3Hash := hex.EncodeToString(ja3Sum[:])
 	// JA3 字符串格式：TLSVersion,CipherSuites,Extensions,SupportedGroups,ECPointFormats
 	parts := strings.Split(ja3Str, ",")
 	if len(parts) != 5 {
-		return "", fmt.Errorf("JA3 字符串格式错误")
+		return "","", fmt.Errorf("JA3 字符串格式错误")
 	}
 	// 对 Extensions 部分进行排序（如果非空）
 	extField := parts[2]
@@ -284,5 +286,5 @@ func ExtractJA3N(data []byte) (string, error) {
 	ja3nStr := strings.Join(parts, ",")
 	// 对新字符串计算 MD5
 	sum := md5.Sum([]byte(ja3nStr))
-	return hex.EncodeToString(sum[:]), nil
+	return ja3Hash,hex.EncodeToString(sum[:]), nil
 }
