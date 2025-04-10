@@ -49,10 +49,11 @@ var (
 	ja4Whitelist        = make(map[string]bool)
 )
 
-func Init(redisAddr, redisPasswd string) {
+func Init(redisAddr, redisPasswd string, dbNum int) {
 	rdb = redis.NewClient(&redis.Options{
 		Addr:         redisAddr,
 		Password:     redisPasswd,
+		DB:           dbNum,
 		DialTimeout:  3 * time.Second,
 		ReadTimeout:  2 * time.Second,
 		WriteTimeout: 2 * time.Second,
@@ -94,32 +95,38 @@ func refreshFlags() error {
 	mu.Lock()
 	defer mu.Unlock()
 	var err error
-	enableJA3Check, err = getBool("config:ja3_check_enabled")
-	enableJA3Blacklist, _ = getBool("config:ja3_blacklist_enabled")
-	enableJA3Whitelist, _ = getBool("config:ja3_whitelist_enabled")
-	enableJA3Collection, _ = getBool("config:ja3_collection_enabled")
+	enableJA3Check, err = getBool("config:ja3_check_enabled", enableJA3Check)
+	enableJA3Blacklist, _ = getBool("config:ja3_blacklist_enabled", enableJA3Blacklist)
+	enableJA3Whitelist, _ = getBool("config:ja3_whitelist_enabled", enableJA3Whitelist)
+	enableJA3Collection, _ = getBool("config:ja3_collection_enabled", enableJA3Collection)
 
-	enableJA3SCheck, _ = getBool("config:ja3s_check_enabled")
-	enableJA3SBlacklist, _ = getBool("config:ja3s_blacklist_enabled")
-	enableJA3SWhitelist, _ = getBool("config:ja3s_whitelist_enabled")
-	enableJA3SCollection, _ = getBool("config:ja3s_collection_enabled")
+	enableJA3SCheck, _ = getBool("config:ja3s_check_enabled", enableJA3SCheck)
+	enableJA3SBlacklist, _ = getBool("config:ja3s_blacklist_enabled", enableJA3SBlacklist)
+	enableJA3SWhitelist, _ = getBool("config:ja3s_whitelist_enabled", enableJA3SWhitelist)
+	enableJA3SCollection, _ = getBool("config:ja3s_collection_enabled", enableJA3SCollection)
 
-	enableJA3NCheck, _ = getBool("config:ja3n_check_enabled")
-	enableJA3NBlacklist, _ = getBool("config:ja3n_blacklist_enabled")
-	enableJA3NWhitelist, _ = getBool("config:ja3n_whitelist_enabled")
-	enableJA3NCollection, _ = getBool("config:ja3n_collection_enabled")
+	enableJA3NCheck, _ = getBool("config:ja3n_check_enabled", enableJA3NCheck)
+	enableJA3NBlacklist, _ = getBool("config:ja3n_blacklist_enabled", enableJA3NBlacklist)
+	enableJA3NWhitelist, _ = getBool("config:ja3n_whitelist_enabled", enableJA3NWhitelist)
+	enableJA3NCollection, _ = getBool("config:ja3n_collection_enabled", enableJA3NCollection)
 
-	enableJA4Check, _ = getBool("config:ja4_check_enabled")
-	enableJA4Blacklist, _ = getBool("config:ja4_blacklist_enabled")
-	enableJA4Whitelist, _ = getBool("config:ja4_whitelist_enabled")
-	enableJA4Collection, _ = getBool("config:ja4_collection_enabled")
+	enableJA4Check, _ = getBool("config:ja4_check_enabled", enableJA4Check)
+	enableJA4Blacklist, _ = getBool("config:ja4_blacklist_enabled", enableJA4Blacklist)
+	enableJA4Whitelist, _ = getBool("config:ja4_whitelist_enabled", enableJA4Whitelist)
+	enableJA4Collection, _ = getBool("config:ja4_collection_enabled", enableJA4Collection)
 
 	return err
 }
 
-func getBool(key string) (bool, error) {
+func getBool(key string, defaultVal bool) (bool, error) {
 	val, err := rdb.Get(ctx, key).Result()
 	if err != nil {
+		if defaultVal {
+			rdb.Set(ctx, key, "true", 0)
+		} else {
+			rdb.Set(ctx, key, "false", 0)
+		}
+
 		return false, err
 	}
 	return val == "true", nil
@@ -129,7 +136,7 @@ func refreshLists() error {
 	mu.Lock()
 	defer mu.Unlock()
 	var err error
-	ja3Blacklist, err = loadSet("ja3:blacklist")
+	ja3Blacklist, _ = loadSet("ja3:blacklist")
 	ja3Whitelist, _ = loadSet("ja3:whitelist")
 	ja3sBlacklist, _ = loadSet("ja3s:blacklist")
 	ja3sWhitelist, _ = loadSet("ja3s:whitelist")

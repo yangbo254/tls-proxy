@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	pkgJa3 "github.com/open-ch/ja3"
 )
 
 // IsTLSClientHello 判断数据是否为 TLS ClientHello 消息（仅简单判断记录头）。
@@ -156,11 +158,17 @@ func ExtractJA3(data []byte) (string, error) {
 			offset += extLen
 		}
 	}
+	if len(cipherSuites) == 0 {
+		cipherSuites = append(cipherSuites, "0")
+	}
+	if len(supportedGroups) == 0 {
+		supportedGroups = append(supportedGroups, "0")
+	}
 	ja3 := fmt.Sprintf("%d,%s,%s,%s,%s",
 		tlsVersion,
-		strings.Join(cipherSuites, "-"),
+		strings.Join(cipherSuites[1:], "-"),
 		strings.Join(extensions, "-"),
-		strings.Join(supportedGroups, "-"),
+		strings.Join(supportedGroups[1:], "-"),
 		strings.Join(ecPointFormats, "-"))
 	return ja3, nil
 }
@@ -259,18 +267,29 @@ func ExtractJA3S(data []byte) (string, error) {
 }
 
 // ExtractJA3N 计算 JA3N 指纹，与 JA3 的区别在于对 Extensions 部分进行排序，以确保指纹的一致性
-func ExtractJA3N(data []byte) (string,string, error) {
+func ExtractJA3N(data []byte) (string, string, error) {
 	// 首先提取原始的 JA3 字符串
-	ja3Str, err := ExtractJA3(data)
+	// ja3Str, err := ExtractJA3(data)
+	// if err != nil {
+	// 	return "", "", err
+	// }
+	j, err := pkgJa3.ComputeJA3FromSegment(data)
 	if err != nil {
-		return "","", err
+		// If the packet is no Client Hello an error is thrown as soon as the parsing fails
+		panic(err)
 	}
-	ja3Sum := md5.Sum([]byte(ja3Str))
-	ja3Hash := hex.EncodeToString(ja3Sum[:])
+
+	// Get the JA3 digest, string and SNI of the parsed Client Hello
+	ja3Hash := j.GetJA3Hash()
+	ja3String := j.GetJA3String()
+	sni := j.GetSNI()
+	fmt.Printf("JA3Hash: %v, JA3String: %v, SNI: %v\n", ja3Hash, ja3String, sni)
+	//ja3Sum := md5.Sum([]byte(ja3Str))
+	//ja3Hash := hex.EncodeToString(ja3Sum[:])
 	// JA3 字符串格式：TLSVersion,CipherSuites,Extensions,SupportedGroups,ECPointFormats
-	parts := strings.Split(ja3Str, ",")
+	parts := strings.Split(ja3String, ",")
 	if len(parts) != 5 {
-		return "","", fmt.Errorf("JA3 字符串格式错误")
+		return "", "", fmt.Errorf("JA3 字符串格式错误")
 	}
 	// 对 Extensions 部分进行排序（如果非空）
 	extField := parts[2]
@@ -286,5 +305,5 @@ func ExtractJA3N(data []byte) (string,string, error) {
 	ja3nStr := strings.Join(parts, ",")
 	// 对新字符串计算 MD5
 	sum := md5.Sum([]byte(ja3nStr))
-	return ja3Hash,hex.EncodeToString(sum[:]), nil
+	return ja3String, hex.EncodeToString(sum[:]), nil
 }

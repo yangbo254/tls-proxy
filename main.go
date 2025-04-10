@@ -10,8 +10,9 @@ import (
 )
 
 func main() {
-	redisAddr := flag.String("redis_addr", "127.0.0.1:6379", "Redis 地址")
-	redisPassword := flag.String("redis_pass", "", "Redis 密码")
+	redisAddr := flag.String("redisaddr", "127.0.0.1:6379", "Redis 地址")
+	redisPassword := flag.String("redispass", "", "Redis 密码")
+	redisDbNum := flag.Int("redisdb", 0, "Redis Select DB")
 	listenPort := flag.Int("listen", 443, "本地监听端口")
 	targetAddr := flag.String("target", "127.0.0.1:8443", "转发目标地址")
 
@@ -31,7 +32,7 @@ func main() {
 	}
 
 	log.Printf("[INFO] 启动配置模块, Redis 地址: %s", *redisAddr)
-	config.Init(*redisAddr, *redisPassword)
+	config.Init(*redisAddr, *redisPassword, *redisDbNum)
 
 	log.Printf("[INFO] 启动 JA3 代理服务，监听 %d 转发到 %s", *listenPort, *targetAddr)
 	err := proxy.StartProxy(fmt.Sprintf(":%d", *listenPort), *targetAddr)
