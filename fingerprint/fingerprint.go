@@ -10,7 +10,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -20,21 +20,6 @@ import (
 	"github.com/dreadl0ck/tlsx"
 )
 
-var (
-	VerboseLogs bool
-	Logger      *log.Logger
-)
-
-func vlogf(format string, args ...any) {
-	if VerboseLogs {
-		if Logger != nil {
-			Logger.Printf(format, args...)
-		} else {
-			log.Printf(format, args...)
-		}
-	}
-}
-
 // JA4Fingerprint is a FingerprintFunc
 func JA4Fingerprint(data *[]byte) (string, error) {
 	fp := &ja4.JA4Fingerprint{}
@@ -43,7 +28,7 @@ func JA4Fingerprint(data *[]byte) (string, error) {
 		return "", fmt.Errorf("ja4: %w", err)
 	}
 
-	vlogf("ja4: %s", fp)
+	slog.Debug("JA4Fingerprint", "ja4", fp)
 	return fp.String(), nil
 }
 
@@ -78,6 +63,6 @@ func JA3Fingerprint(data *[]byte) (string, string, error) {
 
 	fp := ja3.DigestHex(hellobasic)
 
-	vlogf("ja3: %s ja3Hash: %s ja3s: %s ja3sHash: %s", j, fp, ja3nStr, ja3sHash)
+	slog.Debug("JA3Fingerprint", "ja3", j, "ja3Hash", fp, "ja3s", ja3nStr, "ja3sHash", ja3sHash)
 	return fp, ja3sHash, nil
 }

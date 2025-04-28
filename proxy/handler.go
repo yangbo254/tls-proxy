@@ -3,8 +3,9 @@ package proxy
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"net"
+	"strings"
 	"time"
 	"tls-proxy/config"
 	"tls-proxy/fingerprint"
@@ -13,16 +14,14 @@ import (
 
 // StartProxy 监听 listenAddr，转发到 forwardAddr，并进行 JA3/JA3S 指纹检查（根据开关控制）
 func StartProxy(listenAddr, forwardAddr string) error {
-	fingerprint.VerboseLogs = true
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return err
 	}
-	log.Printf("[INFO] 监听 %s，转发到 %s", listenAddr, forwardAddr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("[WARN] 接收连接失败: %v", err)
+			slog.Warn("接收连接失败", "err", err)
 			continue
 		}
 		go handle(conn, forwardAddr)
@@ -37,7 +36,7 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	clientBuf := make([]byte, 8192)
 	n, err := clientConn.Read(clientBuf)
 	if err != nil {
-		log.Printf("[ERROR] 读取客户端握手数据失败: %v", err)
+		slog.Error("读取客户端握手数据失败", "err", err, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 		return
 	}
 	clientData := clientBuf[:n]
@@ -51,29 +50,31 @@ func handle(clientConn net.Conn, forwardAddr string) {
 		if util.IsTLSClientHello(clientData) {
 			ja3Str, ja3nStr, err := fingerprint.JA3Fingerprint(&clientData)
 			if err != nil {
-				log.Printf("[WARN] 提取 JA3+ 失败: %v", err)
+				slog.Warn("提取 JA3+ 失败", "err", err, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 			} else {
-				log.Printf("[INFO] 客户端 JA3: %s, JA3n: %s", ja3Str, ja3nStr)
+				slog.Debug("client ja3+ fingerprint", "ja3", ja3Str, "ja3n", ja3nStr, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 				if EnableJA3Collection {
 					config.ReportJA3(ja3Str)
 				}
 				if EnableJA3Check && config.ShouldBlockJA3(ja3Str) {
-					log.Printf("[BLOCK] 客户端 JA3 阻断匹配，断开连接: %s", ja3Str)
+					config.ReportJA3BlockedEvent(ja3Str)
+					slog.Info("[BLOCK] 客户端 JA3 阻断匹配，断开连接", "ja3", ja3Str, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 					return
 				}
 				if EnableJA3NCollection {
 					config.ReportJA3N(ja3nStr)
 				}
 				if EnableJA3NCheck && config.ShouldBlockJA3N(ja3nStr) {
-					log.Printf("[BLOCK] 客户端 JA3N 阻断匹配，断开连接: %s", ja3nStr)
+					config.ReportJA3NBlockedEvent(ja3nStr)
+					slog.Info("[BLOCK] 客户端 JA3N 阻断匹配，断开连接", "ja3n", ja3nStr, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 					return
 				}
 			}
 		} else {
-			log.Printf("[DEBUG] 客户端数据非 TLS ClientHello，不执行 JA3 检查")
+			slog.Debug("客户端数据非 TLS ClientHello，不执行 JA3 检查", "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 		}
 	} else {
-		log.Printf("[INFO] 客户端 JA3+ 检查已关闭，跳过")
+		slog.Debug("客户端 JA3+ 检查已关闭，跳过", "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 	}
 
 	// 如果开启 JA4 检查，则提取并判断 JA4 指纹
@@ -83,28 +84,29 @@ func handle(clientConn net.Conn, forwardAddr string) {
 		if util.IsTLSClientHello(clientData) {
 			ja4Str, err := fingerprint.JA4Fingerprint(&clientData)
 			if err != nil {
-				log.Printf("[WARN] 提取 JA4 失败: %v", err)
+				slog.Warn("提取 JA4 失败", "err", err, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 			} else {
-				log.Printf("[INFO] 客户端 JA4: %s", ja4Str)
+				slog.Debug("client ja4 fingerprint", "ja4", ja4Str, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 				if EnableJA4Collection {
 					config.ReportJA4(ja4Str)
 				}
 				if EnableJA4Check && config.ShouldBlockJA4(ja4Str) {
-					log.Printf("[BLOCK] 客户端 JA4 阻断匹配，断开连接: %s", ja4Str)
+					config.ReportJA4BlockedEvent(ja4Str)
+					slog.Info("[BLOCK] 客户端 JA4 阻断匹配，断开连接", "ja4", ja4Str, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 					return
 				}
 			}
 		} else {
-			log.Printf("[DEBUG] 客户端数据非 TLS ClientHello，不执行 JA4 检查")
+			slog.Debug("客户端数据非 TLS ClientHello，不执行 JA4 检查", "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 		}
 	} else {
-		log.Printf("[INFO] 客户端 JA3+ 检查已关闭，跳过")
+		slog.Debug("客户端 JA3+ 检查已关闭，跳过", "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 	}
 
 	// 与目标服务器建立连接
 	targetConn, err := net.Dial("tcp", forwardAddr)
 	if err != nil {
-		log.Printf("[ERROR] 连接目标服务器失败: %v", err)
+		slog.Error("连接目标服务器失败", "err", err, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 		return
 	}
 	defer targetConn.Close()
@@ -112,7 +114,7 @@ func handle(clientConn net.Conn, forwardAddr string) {
 	// 将客户端已读取的数据立即发送给目标服务器
 	_, err = targetConn.Write(clientData)
 	if err != nil {
-		log.Printf("[ERROR] 向目标服务器转发数据失败: %v", err)
+		slog.Error("向目标服务器转发数据失败", "err", err, "localaddr", strings.Split(clientConn.LocalAddr().String(), ":")[0])
 		return
 	}
 
