@@ -118,24 +118,38 @@ func refreshConfigLoop() {
 }
 
 func refreshFlags() error {
+
+	_enableJA3Check, err := getBool("config:ja3_check_enabled", enableJA3Check)
+	_enableJA3Blacklist, _ := getBool("config:ja3_blacklist_enabled", enableJA3Blacklist)
+	_enableJA3Whitelist, _ := getBool("config:ja3_whitelist_enabled", enableJA3Whitelist)
+	_enableJA3Collection, _ := getBool("config:ja3_collection_enabled", enableJA3Collection)
+
+	_enableJA3NCheck, _ := getBool("config:ja3n_check_enabled", enableJA3NCheck)
+	_enableJA3NBlacklist, _ := getBool("config:ja3n_blacklist_enabled", enableJA3NBlacklist)
+	_enableJA3NWhitelist, _ := getBool("config:ja3n_whitelist_enabled", enableJA3NWhitelist)
+	_enableJA3NCollection, _ := getBool("config:ja3n_collection_enabled", enableJA3NCollection)
+
+	_enableJA4Check, _ := getBool("config:ja4_check_enabled", enableJA4Check)
+	_enableJA4Blacklist, _ := getBool("config:ja4_blacklist_enabled", enableJA4Blacklist)
+	_enableJA4Whitelist, _ := getBool("config:ja4_whitelist_enabled", enableJA4Whitelist)
+	_enableJA4Collection, _ := getBool("config:ja4_collection_enabled", enableJA4Collection)
+
 	mu.Lock()
-	defer mu.Unlock()
-	var err error
-	enableJA3Check, err = getBool("config:ja3_check_enabled", enableJA3Check)
-	enableJA3Blacklist, _ = getBool("config:ja3_blacklist_enabled", enableJA3Blacklist)
-	enableJA3Whitelist, _ = getBool("config:ja3_whitelist_enabled", enableJA3Whitelist)
-	enableJA3Collection, _ = getBool("config:ja3_collection_enabled", enableJA3Collection)
+	enableJA3Check = _enableJA3Check
+	enableJA3Blacklist = _enableJA3Blacklist
+	enableJA3Whitelist = _enableJA3Whitelist
+	enableJA3Collection = _enableJA3Collection
 
-	enableJA3NCheck, _ = getBool("config:ja3n_check_enabled", enableJA3NCheck)
-	enableJA3NBlacklist, _ = getBool("config:ja3n_blacklist_enabled", enableJA3NBlacklist)
-	enableJA3NWhitelist, _ = getBool("config:ja3n_whitelist_enabled", enableJA3NWhitelist)
-	enableJA3NCollection, _ = getBool("config:ja3n_collection_enabled", enableJA3NCollection)
+	enableJA3NCheck = _enableJA3NCheck
+	enableJA3NBlacklist = _enableJA3NBlacklist
+	enableJA3NWhitelist = _enableJA3NWhitelist
+	enableJA3NCollection = _enableJA3NCollection
 
-	enableJA4Check, _ = getBool("config:ja4_check_enabled", enableJA4Check)
-	enableJA4Blacklist, _ = getBool("config:ja4_blacklist_enabled", enableJA4Blacklist)
-	enableJA4Whitelist, _ = getBool("config:ja4_whitelist_enabled", enableJA4Whitelist)
-	enableJA4Collection, _ = getBool("config:ja4_collection_enabled", enableJA4Collection)
-
+	enableJA4Check = _enableJA4Check
+	enableJA4Blacklist = _enableJA4Blacklist
+	enableJA4Whitelist = _enableJA4Whitelist
+	enableJA4Collection = _enableJA4Collection
+	mu.Unlock()
 	return err
 }
 
@@ -154,15 +168,24 @@ func getBool(key string, defaultVal bool) (bool, error) {
 }
 
 func refreshLists() error {
-	mu.Lock()
-	defer mu.Unlock()
+
 	var err error
-	ja3Blacklist, _ = loadSet("ja3:blacklist")
-	ja3Whitelist, _ = loadSet("ja3:whitelist")
-	ja3nBlacklist, _ = loadSet("ja3n:blacklist")
-	ja3nWhitelist, _ = loadSet("ja3n:whitelist")
-	ja4Blacklist, _ = loadSet("ja4:blacklist")
-	ja4Whitelist, _ = loadSet("ja4:whitelist")
+	_ja3Blacklist, _ := loadSet("ja3:blacklist")
+	_ja3Whitelist, _ := loadSet("ja3:whitelist")
+	_ja3nBlacklist, _ := loadSet("ja3n:blacklist")
+	_ja3nWhitelist, _ := loadSet("ja3n:whitelist")
+	_ja4Blacklist, _ := loadSet("ja4:blacklist")
+	_ja4Whitelist, _ := loadSet("ja4:whitelist")
+
+	mu.Lock()
+	ja3Blacklist = _ja3Blacklist
+	ja3Whitelist = _ja3Whitelist
+	ja3nBlacklist = _ja3nBlacklist
+	ja3nWhitelist = _ja3nWhitelist
+	ja4Blacklist = _ja4Blacklist
+	ja4Whitelist = _ja4Whitelist
+	mu.Unlock()
+
 	return err
 }
 
