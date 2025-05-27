@@ -53,6 +53,8 @@ func main() {
 	// 替换默认的全局 Logger
 	slog.SetDefault(logger)
 
+	slog.Info("start version 1.0.0.250527a")
+
 	slog.Info("启动配置模块", "RedisAddr", *redisAddr)
 	config.Init(*redisAddr, *redisPassword, *redisDbNum)
 

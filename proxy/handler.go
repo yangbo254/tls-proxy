@@ -55,18 +55,18 @@ func (ps *proxyServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 				ja3Str, ja3nStr, err := fingerprint.JA3Fingerprint(&clientData)
 				if err == nil {
 					if config.EnableJA3Collection() {
-						config.ReportJA3(ja3Str)
+						go config.ReportJA3(ja3Str)
 					}
 					if config.EnableJA3Check() && config.ShouldBlockJA3(ja3Str) {
-						config.ReportJA3BlockedEvent(ja3Str)
+						go config.ReportJA3BlockedEvent(ja3Str)
 						slog.Info("[BLOCK] JA3", "ja3", ja3Str, "ip", clientIP)
 						return gnet.Close
 					}
 					if config.EnableJA3NCollection() {
-						config.ReportJA3N(ja3nStr)
+						go config.ReportJA3N(ja3nStr)
 					}
 					if config.EnableJA3NCheck() && config.ShouldBlockJA3N(ja3nStr) {
-						config.ReportJA3NBlockedEvent(ja3nStr)
+						go config.ReportJA3NBlockedEvent(ja3nStr)
 						slog.Info("[BLOCK] JA3N", "ja3n", ja3nStr, "ip", clientIP)
 						return gnet.Close
 					}
@@ -77,10 +77,10 @@ func (ps *proxyServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 				ja4Str, err := fingerprint.JA4Fingerprint(&clientData)
 				if err == nil {
 					if config.EnableJA4Collection() {
-						config.ReportJA4(ja4Str)
+						go config.ReportJA4(ja4Str)
 					}
 					if config.EnableJA4Check() && config.ShouldBlockJA4(ja4Str) {
-						config.ReportJA4BlockedEvent(ja4Str)
+						go config.ReportJA4BlockedEvent(ja4Str)
 						slog.Info("[BLOCK] JA4", "ja4", ja4Str, "ip", clientIP)
 						return gnet.Close
 					}

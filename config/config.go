@@ -3,7 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -70,15 +70,16 @@ func Init(redisAddr, redisPasswd string, dbNum int) {
 		Addr:         redisAddr,
 		Password:     redisPasswd,
 		DB:           dbNum,
-		DialTimeout:  3 * time.Second,
-		ReadTimeout:  2 * time.Second,
-		WriteTimeout: 2 * time.Second,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		PoolSize:     512,
 	})
 
 	// 测试初始连接
 	_, err := rdb.Ping(ctx).Result()
 	if err != nil {
-		log.Printf("[WARN] Redis 初始连接失败，使用默认配置: %v", err)
+		slog.Warn("[WARN] Redis 初始连接失败，使用默认配置", "err", err)
 		redisAvailable = false
 	} else {
 		redisAvailable = true
@@ -92,28 +93,28 @@ func refreshConfigLoop() {
 			err := refreshFlags()
 			err2 := refreshLists()
 			if err != nil || err2 != nil {
-				log.Printf("[WARN] Redis 刷新配置失败，保持当前状态")
+				slog.Warn("[WARN] Redis 刷新配置失败，保持当前状态")
 				redisAvailable = false
 			} else {
 				// 启动清理任务（只启动一次）
 				cleanupOnce.Do(func() {
-					log.Printf("[INFO] 启动定时清理任务")
+					slog.Info("[INFO] 启动定时清理任务")
 					scheduleCleanup()
-					log.Printf("[INFO] 启动阻止事件统计任务")
+					slog.Info("[INFO] 启动阻止事件统计任务")
 					startBlockedAggregation()
-					log.Printf("[INFO] 启动上报任务")
+					slog.Info("[INFO] 启动上报任务")
 					scheduleReportFlush()
 				})
 			}
 		} else {
 			if _, err := rdb.Ping(ctx).Result(); err == nil {
-				log.Printf("[INFO] Redis 连接恢复")
+				slog.Info("[INFO] Redis 连接恢复")
 				redisAvailable = true
 				refreshFlags()
 				refreshLists()
 			}
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(20 * time.Second)
 	}
 }
 
@@ -294,17 +295,19 @@ func flushReports() {
 	ja3ReportCounter = make(map[string]int)
 	ja3ReportMu.Unlock()
 
-	if len(tmpJA3) > 0 {
-		pipe := rdb.TxPipeline()
-		for fp, count := range tmpJA3 {
-			pipe.ZIncrBy(ctx, "ja3:count", float64(count), fp)
-			pipe.ZAdd(ctx, "ja3:last_seen", redis.Z{Score: now, Member: fp})
-			pipe.SAdd(ctx, "ja3:collected", fp)
+	go func(tmpJA3 map[string]int) {
+		if len(tmpJA3) > 0 {
+			pipe := rdb.TxPipeline()
+			for fp, count := range tmpJA3 {
+				pipe.ZIncrBy(ctx, "ja3:count", float64(count), fp)
+				pipe.ZAdd(ctx, "ja3:last_seen", redis.Z{Score: now, Member: fp})
+				pipe.SAdd(ctx, "ja3:collected", fp)
+			}
+			if _, err := pipe.Exec(ctx); err != nil {
+				slog.Warn("[WARN] Redis 上报 JA3 失败", "err", err)
+			}
 		}
-		if _, err := pipe.Exec(ctx); err != nil {
-			log.Printf("[WARN] Redis 上报 JA3 失败: %v", err)
-		}
-	}
+	}(tmpJA3)
 
 	// 处理 JA3N
 	ja3nReportMu.Lock()
@@ -312,41 +315,44 @@ func flushReports() {
 	ja3nReportCounter = make(map[string]int)
 	ja3nReportMu.Unlock()
 
-	if len(tmpJA3N) > 0 {
-		pipe := rdb.TxPipeline()
-		for fp, count := range tmpJA3N {
-			pipe.ZIncrBy(ctx, "ja3n:count", float64(count), fp)
-			pipe.ZAdd(ctx, "ja3n:last_seen", redis.Z{Score: now, Member: fp})
-			pipe.SAdd(ctx, "ja3n:collected", fp)
+	go func(tmpJA3N map[string]int) {
+		if len(tmpJA3N) > 0 {
+			pipe := rdb.TxPipeline()
+			for fp, count := range tmpJA3N {
+				pipe.ZIncrBy(ctx, "ja3n:count", float64(count), fp)
+				pipe.ZAdd(ctx, "ja3n:last_seen", redis.Z{Score: now, Member: fp})
+				pipe.SAdd(ctx, "ja3n:collected", fp)
+			}
+			if _, err := pipe.Exec(ctx); err != nil {
+				slog.Warn("[WARN] Redis 上报 JA3N 失败", "err", err)
+			}
 		}
-		if _, err := pipe.Exec(ctx); err != nil {
-			log.Printf("[WARN] Redis 上报 JA3N 失败: %v", err)
-		}
-	}
+	}(tmpJA3N)
 
 	// 处理 JA4
 	ja4ReportMu.Lock()
 	tmpJA4 := ja4ReportCounter
 	ja4ReportCounter = make(map[string]int)
 	ja4ReportMu.Unlock()
-
-	if len(tmpJA4) > 0 {
-		pipe := rdb.TxPipeline()
-		for fp, count := range tmpJA4 {
-			pipe.ZIncrBy(ctx, "ja4:count", float64(count), fp)
-			pipe.ZAdd(ctx, "ja4:last_seen", redis.Z{Score: now, Member: fp})
-			pipe.SAdd(ctx, "ja4:collected", fp)
+	go func(tmpJA4 map[string]int) {
+		if len(tmpJA4) > 0 {
+			pipe := rdb.TxPipeline()
+			for fp, count := range tmpJA4 {
+				pipe.ZIncrBy(ctx, "ja4:count", float64(count), fp)
+				pipe.ZAdd(ctx, "ja4:last_seen", redis.Z{Score: now, Member: fp})
+				pipe.SAdd(ctx, "ja4:collected", fp)
+			}
+			if _, err := pipe.Exec(ctx); err != nil {
+				slog.Warn("[WARN] Redis 上报 JA4 失败", "err", err)
+			}
 		}
-		if _, err := pipe.Exec(ctx); err != nil {
-			log.Printf("[WARN] Redis 上报 JA4 失败: %v", err)
-		}
-	}
+	}(tmpJA4)
 }
 
 // scheduleReportFlush 每隔 5 秒批量上报一次上报数据（确保只启动一次）
 func scheduleReportFlush() {
 	reportFlushOnce.Do(func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(15 * time.Second)
 		go func() {
 			for range ticker.C {
 				flushReports()
@@ -357,7 +363,7 @@ func scheduleReportFlush() {
 
 func CleanupOldFingerprintEntries(expireSeconds int64) {
 	if !redisAvailable {
-		log.Printf("[INFO] Redis 不可用，跳过指纹清理")
+		slog.Info("[INFO] Redis 不可用，跳过指纹清理")
 		return
 	}
 
@@ -372,9 +378,9 @@ func CleanupOldFingerprintEntries(expireSeconds int64) {
 
 	for _, key := range targets {
 		if deleted, err := rdb.ZRemRangeByScore(ctx, key, "-inf", expireScore).Result(); err != nil {
-			log.Printf("[WARN] 清理指纹 %s 失败: %v", key, err)
+			slog.Warn("[WARN] 清理指纹失败", "key", key, "err", err)
 		} else {
-			log.Printf("[INFO] 清理指纹 %s 过期项 %d 个", key, deleted)
+			slog.Info("[INFO] 清理指纹过期项", "key", key, "deleted", deleted)
 		}
 	}
 }
@@ -384,7 +390,7 @@ func scheduleCleanup() {
 	go func() {
 		for range ticker.C {
 			CleanupOldFingerprintEntries(8 * 3600) // 清理 8h 前的指纹数据
-			log.Printf("[INFO] 清理过期指纹数据完成")
+			slog.Info("[INFO] 清理过期指纹数据完成")
 		}
 	}()
 }
@@ -429,9 +435,9 @@ func ReportJA4BlockedEvent(ja4 string) {
 	ja4blockedCounter[ja4][now]++
 }
 
-// startBlockedAggregation 启动定时任务，每隔5秒上报 blockedCounter 数据到 Redis
+// startBlockedAggregation 启动定时任务，每隔30秒上报 blockedCounter 数据到 Redis
 func startBlockedAggregation() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	go func() {
 		for range ticker.C {
 			flushJA3BlockedCounters()
@@ -459,9 +465,9 @@ func flushJA3BlockedCounters() {
 		}
 		_, err := pipe.Exec(ctx)
 		if err != nil {
-			log.Printf("[WARN] 上报 JA3 [%s] 阻止计数失败: %v", ja3, err)
+			slog.Warn("[WARN] 上报 JA3 阻止计数失败", "ja3", ja3, "err", err)
 		} else {
-			log.Printf("[INFO] 上报 JA3 [%s] 阻止计数: %v", ja3, timeMap)
+			slog.Info("[INFO] 上报 JA3 阻止计数", "ja3", ja3, "timeMap", timeMap)
 		}
 	}
 }
@@ -484,9 +490,9 @@ func flushJA3NBlockedCounters() {
 		}
 		_, err := pipe.Exec(ctx)
 		if err != nil {
-			log.Printf("[WARN] 上报 JA3N [%s] 阻止计数失败: %v", ja3, err)
+			slog.Warn("[WARN] 上报 JA3N 阻止计数失败", "ja3", ja3, "err", err)
 		} else {
-			log.Printf("[INFO] 上报 JA3N [%s] 阻止计数: %v", ja3, timeMap)
+			slog.Info("[INFO] 上报 JA3N 阻止计数", "ja3", ja3, "timeMap", timeMap)
 		}
 	}
 }
@@ -509,9 +515,9 @@ func flushJA4BlockedCounters() {
 		}
 		_, err := pipe.Exec(ctx)
 		if err != nil {
-			log.Printf("[WARN] 上报 JA4 [%s] 阻止计数失败: %v", ja3, err)
+			slog.Warn("[WARN] 上报 JA4 阻止计数失败", "ja3", ja3, "err", err)
 		} else {
-			log.Printf("[INFO] 上报 JA4 [%s] 阻止计数: %v", ja3, timeMap)
+			slog.Info("[INFO] 上报 JA4 阻止计数", "ja3", ja3, "timeMap", timeMap)
 		}
 	}
 }
